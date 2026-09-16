@@ -107,8 +107,30 @@ const demoData = {
   settings: { whatsapp_number: "", instagram_url: "", contact_whatsapp_url: "", theme: "theme-1" }
 };
 
+
+function MobileAdminBlocked() {
+  return (
+    <div className="mobile-admin-blocked">
+      <div className="mobile-admin-card">
+        <div className="mobile-admin-icon">💻</div>
+        <h1>Admin Panel</h1>
+        <p>
+          The Admin Panel is available only on desktop or laptop.
+        </p>
+        <small>
+          Please open the Admin Panel from a computer.
+        </small>
+      </div>
+    </div>
+  );
+}
 function App() {
-  const [route, setRoute] = useState(location.pathname.startsWith("/admin") ? "admin" : "user");
+  const [route, setRoute] = useState(
+    location.pathname.startsWith("/admin") ? "admin" : "user"
+  );
+
+  const isMobile =
+    /Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent);
   const [data, setData] = useState(demoData);
   const [dbReady, setDbReady] = useState(false);
   const [session, setSession] = useState(null);
@@ -280,7 +302,9 @@ async function checkMFA(session) {
   // With no Supabase configured, admin stays open (demo mode, nothing to protect).
   const adminUnlocked =
   !supabase || (!!session && mfaState === "verified");
-
+  if (route === "admin" && isMobile) {
+    return <MobileAdminBlocked />;
+  }
   return route === "admin"
     ? (!authChecked
         ? <div className="admin-login"><div className="admin-login-glow admin-login-glow-1"/><div className="admin-login-glow admin-login-glow-2"/><div className="admin-login-card"><div className="admin-login-mark"><Gift size={26}/></div><p className="muted-text">Loading…</p></div></div>
