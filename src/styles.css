@@ -670,22 +670,39 @@ code {
     top:20px
 }
 .gallery-main {
-    position:relative;
-    height:380px;
-    border-radius:14px;
-    background:#f3f4f6;
-    display:grid;
-    place-items:center;
-    color:#a1a8b2;
-    overflow:hidden;
-    touch-action:pan-y
+  position: relative;
+  width: 100%;
+  height: 500px;
+  border-radius: 14px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: pan-y;
 }
+
 .gallery-main img {
-    width:100%;
-    height:100%;
-    object-fit:cover;
-    user-select:none;
-    -webkit-user-drag:none
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+@media (max-width: 720px) {
+  .gallery-main {
+    height: 430px;
+    min-height: 430px;
+    max-height: none;
+  }
+
+  .gallery-main img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
 }
 .gallery-arrow {
     position:absolute;
