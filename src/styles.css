@@ -1374,3 +1374,242 @@ em {
     margin: 15px;
   }
 }
+
+
+/* Update 1 */
+
+/* =========================================================
+   CONTACT FOOTER
+   ========================================================= */
+
+.wa-float {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent, #b8862b);
+  color: #fff;
+  text-decoration: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,.18);
+  z-index: 1000;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.wa-float:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 34px rgba(0,0,0,.22);
+}
+
+.contact-strip {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 20px 28px;
+}
+
+.contact-strip a {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent, #b8862b);
+  background: rgba(0,0,0,.045);
+  text-decoration: none;
+  transition: transform .2s ease, background .2s ease;
+}
+
+.contact-strip a:hover {
+  transform: translateY(-2px);
+  background: color-mix(
+    in srgb,
+    var(--accent, #b8862b) 12%,
+    transparent
+  );
+}
+
+
+/* =========================================================
+   FIELD HELPER / EXAMPLE TEXT
+   ========================================================= */
+
+.field-helper {
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 7px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #888;
+}
+
+
+/* =========================================================
+   MOBILE NUMBER FIELD
+   ========================================================= */
+
+.phone-field {
+  display: grid;
+  grid-template-columns: 145px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.phone-field select,
+.phone-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+
+/* =========================================================
+   PAYMENT
+   ========================================================= */
+
+.payment-summary {
+  width: 100%;
+  max-width: 620px;
+  margin: 24px auto;
+  padding: 18px 20px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 16px;
+  background: rgba(255,255,255,.7);
+  box-sizing: border-box;
+}
+
+.payment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.payment-row + .payment-row {
+  margin-top: 10px;
+}
+
+.payment-row strong {
+  color: var(--accent, #b8862b);
+  font-size: 20px;
+}
+
+.payment-row.muted {
+  justify-content: flex-start;
+  font-size: 13px;
+  color: #888;
+}
+
+.payment-note {
+  max-width: 560px;
+  margin: 20px auto;
+  padding: 15px 18px;
+  border-radius: 12px;
+  background: rgba(190, 120, 40, .08);
+  color: #76582e;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+
+/* =========================================================
+   DISCOUNT
+   ========================================================= */
+
+.discount-badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--accent, #b8862b);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.price-tag s,
+.card-price s,
+.preview-price s {
+  opacity: .5;
+  margin-left: 4px;
+  font-size: .78em;
+}
+
+
+/* =========================================================
+   SETTINGS THEME SWATCHES
+   ========================================================= */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 48px);
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.theme-swatch {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 3px solid transparent;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease;
+}
+
+.theme-swatch:hover {
+  transform: scale(1.08);
+}
+
+.theme-swatch.active {
+  border-color: #222;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 600px) {
+
+  .wa-float {
+    width: 48px;
+    height: 48px;
+    right: 15px;
+    bottom: 15px;
+  }
+
+  .contact-strip {
+    padding-bottom: 24px;
+  }
+
+  .phone-field {
+    grid-template-columns: 115px minmax(0, 1fr);
+  }
+
+  .payment-summary {
+    padding: 15px;
+  }
+
+  .theme-grid {
+    grid-template-columns: repeat(5, 42px);
+    gap: 10px;
+  }
+
+  .theme-swatch {
+    width: 42px;
+    height: 42px;
+  }
+}
