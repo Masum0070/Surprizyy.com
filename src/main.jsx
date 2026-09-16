@@ -512,6 +512,56 @@ function SettingsPanel({settings, onSave}) {
     </div>
   );
 }
+// Update 
+
+async function optimizeImage(file) {
+  // Keep already-small files as they are
+  if (!file.type.startsWith("image/")) return file;
+
+  const MAX_SIZE = 1400;
+  const QUALITY = 0.82;
+
+  const bitmap = await createImageBitmap(file);
+
+  let width = bitmap.width;
+  let height = bitmap.height;
+
+  // Resize only if larger than MAX_SIZE
+  if (width > MAX_SIZE || height > MAX_SIZE) {
+    const scale = Math.min(MAX_SIZE / width, MAX_SIZE / height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d", { alpha: false });
+
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  bitmap.close();
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      result => result ? resolve(result) : reject(new Error("Image compression failed")),
+      "image/webp",
+      QUALITY
+    );
+  });
+
+  return new File(
+    [blob],
+    file.name.replace(/\.[^/.]+$/, "") + ".webp",
+    {
+      type: "image/webp",
+      lastModified: Date.now()
+    }
+  );
+}
+
+
 
 function User({data,setData,navigate,supabase}) {
   const [step,setStep]=useState(1), [gift,setGift]=useState(null), [template,setTemplate]=useState(null), [values,setValues]=useState({}), [files,setFiles]=useState({}), [done,setDone]=useState(false), [busy,setBusy]=useState(false);
@@ -566,11 +616,32 @@ function User({data,setData,navigate,supabase}) {
         const rows = [];
         for (const s of sections) for (const f of s.fields||[]) {
           if(values[f.id] !== undefined) rows.push({ submission_id:submissionId, field_id:f.id, value_json:JSON.stringify(values[f.id]) });
-          for(const file of (files[f.id]||[])) {
-            const path=`submissions/${submissionId}/${uid()}-${file.name}`;
-            const {error}=await supabase.storage.from("submission-images").upload(path,file);
-            if(!error) fileRecords.push({submission_id:submissionId,field_id:f.id,file_path:path,file_name:file.name});
-          }
+          for (const file of (files[f.id] || [])) {
+  try {
+    const optimizedFile = await optimizeImage(file);
+
+    const path = `submissions/${submissionId}/${uid()}-${optimizedFile.name}`;
+
+    const { error } = await supabase.storage
+      .from("submission-images")
+      .upload(path, optimizedFile, {
+        contentType: "image/webp",
+        cacheControl: "31536000",
+        upsert: false
+      });
+
+    if (!error) {
+      fileRecords.push({
+        submission_id: submissionId,
+        field_id: f.id,
+        file_path: path,
+        file_name: optimizedFile.name
+      });
+    }
+  } catch (err) {
+    console.error("Image optimization/upload failed:", err);
+  }
+}
         }
         await supabase.from("submissions").insert({
           id:submissionId, gift_id:gift.id, template_id:template.id,
@@ -710,27 +781,95 @@ function Modal({title,children,onClose,onSave,saveLabel="Save changes"}) {
  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><div className="modal"><div className="modal-head"><h2>{title}</h2><button onClick={onClose}><X/></button></div><div className="modal-body">{children}</div><div className="modal-foot"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" onClick={onSave}><Save/> {saveLabel}</button></div></div></div>
 }
 function GiftModal({value,onClose,onSave}){const [v,setV]=useState(value);return <Modal title="Edit gift type" onClose={onClose} onSave={()=>onSave(v)}><div className="modal-form"><label>Name<input value={v.name} onChange={e=>setV({...v,name:e.target.value})}/></label><label>Emoji<input value={v.emoji||""} onChange={e=>setV({...v,emoji:e.target.value})}/></label><label className="switch-row">Active<input type="checkbox" checked={v.active} onChange={e=>setV({...v,active:e.target.checked})}/></label></div></Modal>}
+async function optimizeTemplateImage(file) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Please select an image file.");
+  }
+
+  const MAX_SIZE = 1400;
+  const QUALITY = 0.82;
+
+  const bitmap = await createImageBitmap(file);
+
+  let width = bitmap.width;
+  let height = bitmap.height;
+
+  if (width > MAX_SIZE || height > MAX_SIZE) {
+    const scale = Math.min(MAX_SIZE / width, MAX_SIZE / height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  bitmap.close();
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      result => {
+        if (result) resolve(result);
+        else reject(new Error("Image compression failed"));
+      },
+      "image/webp",
+      QUALITY
+    );
+  });
+
+  return new File(
+    [blob],
+    file.name.replace(/\.[^/.]+$/, "") + ".webp",
+    {
+      type: "image/webp",
+      lastModified: Date.now()
+    }
+  );
+}
 function TemplateModal({value,onClose,onSave}){
   const [v,setV]=useState({...value, preview_urls: value.preview_urls?.length ? [...value.preview_urls] : (value.preview_url ? [value.preview_url] : [])});
   const [uploading,setUploading]=useState({});
   function setImg(i,val){ setV(x=>{ const arr=[...(x.preview_urls||[])]; arr[i]=val; return {...x, preview_urls:arr}; }); }
 
   async function uploadPhoto(i, file){
-    if (!supabase) { alert("Connect Supabase (fill in your .env) to enable photo uploads."); return; }
-    setUploading(u=>({...u,[i]:true}));
-    try {
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `templates/${v.id}/${i}-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("template-images").upload(path, file, { upsert:true });
-      if (error) throw error;
-      const { data: pub } = supabase.storage.from("template-images").getPublicUrl(path);
-      setImg(i, pub.publicUrl);
-    } catch(e) {
-      alert(`Upload failed: ${e.message}`);
-    } finally {
-      setUploading(u=>({...u,[i]:false}));
-    }
+  if (!supabase) {
+    alert("Connect Supabase (fill in your .env) to enable photo uploads.");
+    return;
   }
+
+  setUploading(u => ({...u, [i]: true}));
+
+  try {
+    // Optimize before uploading
+    const optimizedFile = await optimizeTemplateImage(file);
+
+    const path = `templates/${v.id}/${i}-${Date.now()}.webp`;
+
+    const { error } = await supabase.storage
+      .from("template-images")
+      .upload(path, optimizedFile, {
+        contentType: "image/webp",
+        cacheControl: "31536000",
+        upsert: true
+      });
+
+    if (error) throw error;
+
+    const { data: pub } = supabase.storage
+      .from("template-images")
+      .getPublicUrl(path);
+
+    setImg(i, pub.publicUrl);
+
+  } catch(e) {
+    alert(`Upload failed: ${e.message}`);
+  } finally {
+    setUploading(u => ({...u, [i]: false}));
+  }
+}
 
   function handleSave(){
     const cleaned = (v.preview_urls||[]).map(u=>(u||"").trim()).filter(Boolean).slice(0,4);
