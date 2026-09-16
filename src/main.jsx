@@ -113,7 +113,63 @@ function App() {
   const [dbReady, setDbReady] = useState(false);
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [mfaState, setMfaState] = useState("checking");
+const [mfaFactor, setMfaFactor] = useState(null);
+async function checkMFA(session) {
+  if (!supabase || !session) {
+    setMfaState("none");
+    setMfaFactor(null);
+    return;
+  }
 
+  try {
+    const { data: aal, error: aalError } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+    if (aalError) {
+      console.error("MFA AAL error:", aalError);
+      setMfaState("error");
+      return;
+    }
+
+    const { data: factors, error: factorError } =
+      await supabase.auth.mfa.listFactors();
+
+    if (factorError) {
+      console.error("MFA factors error:", factorError);
+      setMfaState("error");
+      return;
+    }
+
+    const verifiedTotp =
+      factors?.totp?.find((factor) => factor.status === "verified") || null;
+
+    setMfaFactor(verifiedTotp);
+
+    // No authenticator has been configured yet
+    if (!verifiedTotp) {
+      setMfaState("enroll");
+      return;
+    }
+
+    // Authenticator exists but this session has not completed MFA
+    if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
+      setMfaState("challenge");
+      return;
+    }
+
+    // MFA already completed
+    if (aal?.currentLevel === "aal2") {
+      setMfaState("verified");
+      return;
+    }
+
+    setMfaState("challenge");
+  } catch (err) {
+    console.error("MFA check failed:", err);
+    setMfaState("error");
+  }
+}
   useEffect(() => {
     const onPop = () => setRoute(location.pathname.startsWith("/admin") ? "admin" : "user");
     addEventListener("popstate", onPop);
@@ -121,15 +177,28 @@ function App() {
 
     if (supabase) {
       supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session);
-        setAuthChecked(true);
-        if (session) loadSubmissions();
-      });
+  setSession(session);
+  setAuthChecked(true);
+
+  if (session) {
+    checkMFA(session);
+    loadSubmissions();
+  } else {
+    setMfaState("none");
+  }
+});
       const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-        setSession(session);
-        if (session) loadSubmissions();
-        else setData(d => ({ ...d, submissions: [] }));
-      });
+  setSession(session);
+
+  if (session) {
+    checkMFA(session);
+    loadSubmissions();
+  } else {
+    setMfaState("none");
+    setMfaFactor(null);
+    setData(d => ({ ...d, submissions: [] }));
+  }
+});
       return () => { removeEventListener("popstate", onPop); sub.subscription.unsubscribe(); };
     }
     setAuthChecked(true);
@@ -209,17 +278,245 @@ function App() {
   }
 
   // With no Supabase configured, admin stays open (demo mode, nothing to protect).
-  const adminUnlocked = !supabase || !!session;
+  const adminUnlocked =
+  !supabase || (!!session && mfaState === "verified");
 
   return route === "admin"
     ? (!authChecked
         ? <div className="admin-login"><div className="admin-login-glow admin-login-glow-1"/><div className="admin-login-glow admin-login-glow-2"/><div className="admin-login-card"><div className="admin-login-mark"><Gift size={26}/></div><p className="muted-text">Loading…</p></div></div>
         : adminUnlocked
-          ? <Admin data={data} setData={setData} navigate={navigate} dbReady={dbReady} onLogout={() => supabase?.auth.signOut()} />
-          : <AdminLogin />)
+  ? <Admin data={data} setData={setData} navigate={navigate} dbReady={dbReady} onLogout={() => supabase?.auth.signOut()} />
+  : mfaState === "enroll"
+    ? <AdminMFAEnroll onVerified={() => setMfaState("verified")} />
+    : mfaState === "challenge"
+      ? <AdminMFA factor={mfaFactor} onVerified={() => setMfaState("verified")} />
+      : <AdminLogin />)
     : <User data={data} setData={setData} navigate={navigate} supabase={supabase} />;
 }
+function AdminMFAEnroll({ onVerified }) {
+  const [qrCode, setQrCode] = useState("");
+  const [factorId, setFactorId] = useState("");
+  const [code, setCode] = useState("");
+  const [secret, setSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
+  useEffect(() => {
+    async function setup() {
+      setErr("");
+
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: "Surprizyy Admin Authenticator"
+      });
+
+      if (error) {
+        console.error(error);
+        setErr(error.message);
+        return;
+      }
+
+      setFactorId(data.id);
+      setQrCode(data.totp.qr_code);
+      setSecret(data.totp.secret);
+    }
+
+    setup();
+  }, []);
+
+  async function verify() {
+    if (!code.trim()) {
+      setErr("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+
+    setBusy(true);
+    setErr("");
+
+    try {
+      const { data: challenge, error: challengeError } =
+        await supabase.auth.mfa.challenge({
+          factorId
+        });
+
+      if (challengeError) {
+        setErr(challengeError.message);
+        setBusy(false);
+        return;
+      }
+
+      const { error: verifyError } =
+        await supabase.auth.mfa.verify({
+          factorId,
+          challengeId: challenge.id,
+          code: code.trim()
+        });
+
+      if (verifyError) {
+        setErr(verifyError.message);
+        setBusy(false);
+        return;
+      }
+
+      onVerified();
+    } catch (e) {
+      console.error(e);
+      setErr("Verification failed.");
+    }
+
+    setBusy(false);
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
+        <h2 className="text-2xl font-bold mb-2">
+          Set up Authenticator
+        </h2>
+
+        <p className="text-sm text-gray-500 mb-5">
+          Scan this QR code using Google Authenticator, Microsoft
+          Authenticator, or another TOTP authenticator app.
+        </p>
+
+        {qrCode && (
+          <div className="flex justify-center mb-5">
+            <img
+              src={qrCode}
+              alt="Authenticator QR Code"
+              className="w-52 h-52 border rounded-xl p-2"
+            />
+          </div>
+        )}
+
+        {secret && (
+          <div className="mb-5">
+            <p className="text-xs text-gray-500 mb-1">
+              Manual setup key
+            </p>
+
+            <div className="bg-gray-100 rounded-lg p-3 text-sm font-mono break-all">
+              {secret}
+            </div>
+          </div>
+        )}
+
+        <input
+          value={code}
+          onChange={(e) =>
+            setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+          }
+          placeholder="Enter 6-digit code"
+          inputMode="numeric"
+          maxLength={6}
+          className="w-full border rounded-xl px-4 py-3 mb-3"
+        />
+
+        {err && (
+          <div className="text-red-600 text-sm mb-3">
+            {err}
+          </div>
+        )}
+
+        <button
+          onClick={verify}
+          disabled={busy || code.length !== 6}
+          className="w-full rounded-xl px-4 py-3 bg-black text-white disabled:opacity-50"
+        >
+          {busy ? "Verifying..." : "Verify & Continue"}
+        </button>
+      </div>
+    </div>
+  );
+}
+function AdminMFA({ factor, onVerified }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function verify() {
+    if (!factor?.id) {
+      setErr("Authenticator factor not found.");
+      return;
+    }
+
+    setBusy(true);
+    setErr("");
+
+    try {
+      const { data: challenge, error: challengeError } =
+        await supabase.auth.mfa.challenge({
+          factorId: factor.id
+        });
+
+      if (challengeError) {
+        setErr(challengeError.message);
+        setBusy(false);
+        return;
+      }
+
+      const { error: verifyError } =
+        await supabase.auth.mfa.verify({
+          factorId: factor.id,
+          challengeId: challenge.id,
+          code: code.trim()
+        });
+
+      if (verifyError) {
+        setErr(verifyError.message);
+        setBusy(false);
+        return;
+      }
+
+      onVerified();
+    } catch (e) {
+      console.error(e);
+      setErr("Verification failed.");
+    }
+
+    setBusy(false);
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
+        <h2 className="text-2xl font-bold mb-2">
+          Admin Verification
+        </h2>
+
+        <p className="text-sm text-gray-500 mb-5">
+          Open your authenticator app and enter the 6-digit code.
+        </p>
+
+        <input
+          value={code}
+          onChange={(e) =>
+            setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+          }
+          placeholder="6-digit code"
+          inputMode="numeric"
+          maxLength={6}
+          autoFocus
+          className="w-full border rounded-xl px-4 py-3 mb-3 text-center text-xl tracking-widest"
+        />
+
+        {err && (
+          <div className="text-red-600 text-sm mb-3">
+            {err}
+          </div>
+        )}
+
+        <button
+          onClick={verify}
+          disabled={busy || code.length !== 6}
+          className="w-full rounded-xl px-4 py-3 bg-black text-white disabled:opacity-50"
+        >
+          {busy ? "Verifying..." : "Verify & Enter Admin"}
+        </button>
+      </div>
+    </div>
+  );
+}
 function AdminLogin() {
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
