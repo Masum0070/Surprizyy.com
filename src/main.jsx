@@ -134,9 +134,183 @@ function App() {
   const [data, setData] = useState(demoData);
   const [dbReady, setDbReady] = useState(false);
   const [session, setSession] = useState(null);
-  const [authChecked, setAuthChecked] = useState(false);
-  const [mfaState, setMfaState] = useState("checking");
+const [authChecked, setAuthChecked] = useState(false);
+const [mfaState, setMfaState] = useState("checking");
 const [mfaFactor, setMfaFactor] = useState(null);
+
+// Secure admin session
+const [adminSession, setAdminSession] = useState(null);
+const [adminSessionChecked, setAdminSessionChecked] = useState(false);
+
+async function createAdminSession() {
+  if (!supabase || !session) return false;
+
+  if (adminSession) {
+    const stillValid =
+      new Date(adminSession.expiresAt).getTime() > Date.now();
+
+    if (stillValid) {
+      return true;
+    }
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke(
+      "admin-session",
+      {
+        body: {
+          action: "create",
+        },
+      }
+    );
+
+    if (error || !data?.success || !data?.session) {
+      console.error("Secure admin session creation failed:", error);
+      return false;
+    }
+
+    const secureSession = {
+      id: data.session.id,
+      code: data.session.code,
+      token: data.session.token,
+      expiresAt: data.session.expiresAt,
+    };
+
+    sessionStorage.setItem(
+      "surprizyy_admin_session",
+      JSON.stringify(secureSession)
+    );
+
+    setAdminSession(secureSession);
+    setAdminSessionChecked(true);
+
+    return true;
+  } catch (error) {
+    console.error("Secure admin session error:", error);
+    return false;
+  }
+}
+
+async function verifyAdminSession() {
+  if (!supabase || !session) {
+    setAdminSessionChecked(true);
+    return false;
+  }
+
+  try {
+    const stored = sessionStorage.getItem(
+      "surprizyy_admin_session"
+    );
+
+    if (!stored) {
+      setAdminSession(null);
+      setAdminSessionChecked(true);
+      return false;
+    }
+
+    const saved = JSON.parse(stored);
+
+    if (!saved?.id || !saved?.token) {
+      sessionStorage.removeItem(
+        "surprizyy_admin_session"
+      );
+
+      setAdminSession(null);
+      setAdminSessionChecked(true);
+      return false;
+    }
+
+    const { data, error } =
+      await supabase.functions.invoke(
+        "admin-session",
+        {
+          body: {
+            action: "verify",
+            sessionId: saved.id,
+            token: saved.token,
+          },
+        }
+      );
+
+    if (data?.reason !== "SESSION_NOT_FOUND") {
+  console.warn(
+    "Admin secure session rejected:",
+    data?.reason || error
+  );
+
+
+      sessionStorage.removeItem(
+        "surprizyy_admin_session"
+      );
+
+      setAdminSession(null);
+      setAdminSessionChecked(true);
+
+      return false;
+    }
+
+    const verified = {
+      ...saved,
+      code:
+        data.session?.code || saved.code,
+      expiresAt:
+        data.session?.expiresAt || saved.expiresAt,
+    };
+
+    sessionStorage.setItem(
+      "surprizyy_admin_session",
+      JSON.stringify(verified)
+    );
+
+    setAdminSession(verified);
+    setAdminSessionChecked(true);
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Admin session verification failed:",
+      error
+    );
+
+    sessionStorage.removeItem(
+      "surprizyy_admin_session"
+    );
+
+    setAdminSession(null);
+    setAdminSessionChecked(true);
+
+    return false;
+  }
+}
+
+async function revokeAdminSession() {
+  try {
+    if (supabase && session && adminSession?.id) {
+      await supabase.functions.invoke(
+        "admin-session",
+        {
+          body: {
+            action: "revoke",
+            sessionId: adminSession.id,
+          },
+        }
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Admin session revoke failed:",
+      error
+    );
+  }
+
+  sessionStorage.removeItem(
+    "surprizyy_admin_session"
+  );
+
+  setAdminSession(null);
+  setAdminSessionChecked(true);
+}
+
 async function checkMFA(session) {
   if (!supabase || !session) {
     setMfaState("none");
@@ -198,25 +372,30 @@ async function checkMFA(session) {
     loadCatalog();
 
     if (supabase) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
   setSession(session);
   setAuthChecked(true);
 
   if (session) {
-    checkMFA(session);
-    loadSubmissions();
-  } else {
+  checkMFA(session);
+  loadSubmissions();
+} else {
     setMfaState("none");
   }
 });
-      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
   setSession(session);
 
-  if (session) {
-    checkMFA(session);
-    loadSubmissions();
-  } else {
-    setMfaState("none");
+if (session) {
+  setAdminSession(null);
+  setAdminSessionChecked(false);
+  await checkMFA(session);
+  loadSubmissions();
+} else {
+  setMfaState("none");
+  setAdminSession(null);
+  setAdminSessionChecked(true);
+
     setMfaFactor(null);
     setData(d => ({ ...d, submissions: [] }));
   }
@@ -226,6 +405,26 @@ async function checkMFA(session) {
     setAuthChecked(true);
     return () => removeEventListener("popstate", onPop);
   }, []);
+
+    useEffect(() => {
+    if (!supabase || !session || mfaState !== "verified") return;
+
+    let cancelled = false;
+
+    (async () => {
+      const valid = await verifyAdminSession();
+
+      if (cancelled) return;
+
+      if (!valid) {
+        await createAdminSession();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, mfaState]);
 
   // Gift types, templates, sections and fields are readable by anyone (RLS: public select)
   // so the customer-facing form works without logging in.
@@ -299,22 +498,58 @@ async function checkMFA(session) {
     setRoute(path.startsWith("/admin") ? "admin" : "user");
   }
 
-  // With no Supabase configured, admin stays open (demo mode, nothing to protect).
+  // With Supabase configured, 
   const adminUnlocked =
-  !supabase || (!!session && mfaState === "verified");
-  if (route === "admin" && isMobile) {
-    return <MobileAdminBlocked />;
-  }
+  !supabase ||
+  (
+    !!session &&
+    mfaState === "verified" &&
+    !!adminSession &&
+    adminSessionChecked
+  );
+ 
   return route === "admin"
     ? (!authChecked
         ? <div className="admin-login"><div className="admin-login-glow admin-login-glow-1"/><div className="admin-login-glow admin-login-glow-2"/><div className="admin-login-card"><div className="admin-login-mark"><Gift size={26}/></div><p className="muted-text">Loading…</p></div></div>
         : adminUnlocked
-  ? <Admin data={data} setData={setData} navigate={navigate} dbReady={dbReady} onLogout={() => supabase?.auth.signOut()} />
+  ? <Admin data={data} setData={setData} navigate={navigate} dbReady={dbReady}
+  onLogout={async () => {
+  await revokeAdminSession();
+  await supabase?.auth.signOut();
+}} />
   : mfaState === "enroll"
-    ? <AdminMFAEnroll onVerified={() => setMfaState("verified")} />
+    ? <AdminMFAEnroll
+  onVerified={async () => {
+    setMfaState("verified");
+    await createAdminSession();
+  }}
+/>
     : mfaState === "challenge"
-      ? <AdminMFA factor={mfaFactor} onVerified={() => setMfaState("verified")} />
-      : <AdminLogin />)
+  ? <AdminMFA
+      factor={mfaFactor}
+      onVerified={async () => {
+        setMfaState("verified");
+        await createAdminSession();
+      }}
+    />
+  : mfaState === "verified" && !adminSessionChecked
+    ? (
+      <div className="admin-login">
+        <div className="admin-login-glow admin-login-glow-1" />
+        <div className="admin-login-glow admin-login-glow-2" />
+
+        <div className="admin-login-card">
+          <div className="admin-login-mark">
+            <Gift size={26} />
+          </div>
+
+          <p className="muted-text">
+            Verifying secure session…
+          </p>
+        </div>
+      </div>
+    )
+    : <AdminLogin />)
     : <User data={data} setData={setData} navigate={navigate} supabase={supabase} />;
 }
 function AdminMFAEnroll({ onVerified }) {
