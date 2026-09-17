@@ -1228,12 +1228,7 @@ function User({data,setData,navigate,supabase}) {
 
   return <div className="user-shell" style={{"--accent":accentColor}}>
     <header className="user-header"><div className="brand"><span className="brand-mark">S</span><span>Surprizyy</span></div>
-    <button
-  className="admin-link"
-  onClick={() => window.open("/admin", "_blank", "noopener,noreferrer")}
->
-  Admin
-</button></header>
+    </header>
     <div className="user-container">
       <div className="user-hero"><span className="eyebrow">PERSONALIZED DIGITAL GIFT</span><h1>Let's create something special.</h1><p>Choose a surprise and share the details. It only takes a minute.</p></div>
       <div className="steps"><span className={step>=1?"current":""}>1 <b>Gift</b></span><i></i><span className={step>=2?"current":""}>2 <b>Template</b></span><i></i><span className={step>=3?"current":""}>3 <b>Preview</b></span><i></i><span className={step>=4?"current":""}>4 <b>Details</b></span>{hasPayment && <><i></i><span className={step>=5?"current":""}>5 <b>Payment</b></span></>}</div>
