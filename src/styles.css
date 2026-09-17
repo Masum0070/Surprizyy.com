@@ -1533,6 +1533,45 @@ em {
   line-height: 1.5;
 }
 
+.payment-actions {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.payment-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 auto 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,.7);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #444;
+  box-sizing: border-box;
+}
+
+.payment-consent input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent, #b8862b);
+  cursor: pointer;
+}
+
+.payment-consent strong {
+  color: var(--accent, #b8862b);
+}
+
+.payment-actions .submit {
+  width: 100%;
+}
+
 
 /* =========================================================
    DISCOUNT

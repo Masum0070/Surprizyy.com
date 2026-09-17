@@ -1121,6 +1121,7 @@ async function optimizeImage(file) {
 
 function User({data,setData,navigate,supabase}) {
   const [step,setStep]=useState(1), [gift,setGift]=useState(null), [template,setTemplate]=useState(null), [values,setValues]=useState({}), [files,setFiles]=useState({}), [done,setDone]=useState(false), [busy,setBusy]=useState(false);
+  const [payConsent,setPayConsent]=useState(false);
   const activeGifts=data.gifts.filter(g=>g.active).sort((a,b)=>a.sort_order-b.sort_order);
   const templates=data.templates.filter(t=>t.gift_id===gift?.id && t.active).sort((a,b)=>a.sort_order-b.sort_order);
   const sections=data.sections.filter(s=>s.template_id===template?.id && s.active).sort((a,b)=>a.sort_order-b.sort_order);
@@ -1160,6 +1161,14 @@ function User({data,setData,navigate,supabase}) {
       modal: { ondismiss: () => setBusy(false) }
     });
     rzp.open();
+  }
+
+  function submitWithConsent() {
+    if (!payConsent) {
+      alert(`Please confirm that you will pay ₹${amount} for this order.`);
+      return;
+    }
+    submit({ payment_status: "pending" });
   }
 
   async function submit(payment) {
@@ -1202,7 +1211,7 @@ function User({data,setData,navigate,supabase}) {
         await supabase.from("submissions").insert({
           id:submissionId, gift_id:gift.id, template_id:template.id,
           customer_name:Object.values(values)[0]||"Customer", status:"New",
-          ...(payment ? { razorpay_payment_id:payment.razorpay_payment_id, payment_status:payment.payment_status } : (hasPayment ? {} : { payment_status:"not_required" }))
+          ...(payment ? { payment_status:payment.payment_status, ...(payment.razorpay_payment_id ? { razorpay_payment_id:payment.razorpay_payment_id } : {}) } : (hasPayment ? {} : { payment_status:"not_required" }))
         });
         if(rows.length) await supabase.from("submission_values").insert(rows);
         if(fileRecords.length) await supabase.from("submission_files").insert(fileRecords);
@@ -1215,7 +1224,7 @@ function User({data,setData,navigate,supabase}) {
 
   const accentColor = (THEMES.find(t=>t[0]===(data.settings?.theme||"theme-1"))||THEMES[0])[2];
 
-  if(done) return <div className="user-shell" style={{"--accent":accentColor}}><div className="success-screen"><div className="success-mark"><Check/></div><h1>Details submitted successfully!</h1><p>Your surprise details are safely recorded.</p><button className="primary" onClick={()=>{setDone(false);setStep(1);setGift(null);setTemplate(null);setValues({});setFiles({})}}>Submit another</button></div><ContactFooter settings={data.settings}/></div>;
+  if(done) return <div className="user-shell" style={{"--accent":accentColor}}><div className="success-screen"><div className="success-mark"><Check/></div><h1>Details submitted successfully!</h1><p>Your surprise details are safely recorded.</p><button className="primary" onClick={()=>{setDone(false);setStep(1);setGift(null);setTemplate(null);setValues({});setFiles({});setPayConsent(false)}}>Submit another</button></div><ContactFooter settings={data.settings}/></div>;
 
   return <div className="user-shell" style={{"--accent":accentColor}}>
     <header className="user-header"><div className="brand"><span className="brand-mark">S</span><span>Surprizyy</span></div>
@@ -1246,14 +1255,21 @@ function User({data,setData,navigate,supabase}) {
         <div className="dynamic-form">{sections.map(s=><div className="user-section" key={s.id}><h3>{s.title}</h3>{s.fields?.filter(f=>f.active).sort((a,b)=>a.sort_order-b.sort_order).map(f=><DynamicField key={f.id} field={f} value={values[f.id]} files={files[f.id]||[]} setValue={v=>setVal(f.id,v)} setFiles={v=>setFiles(x=>({...x,[f.id]:v}))}/>)}</div>)}
         <button className="primary submit" disabled={busy} onClick={proceedFromDetails}>{busy?"Please wait...":(hasPayment?"Continue to Payment":"Submit My Details")} <Save size={17}/></button></div>
       </>}
-      {step===5 && template && <><button className="back-button" onClick={()=>setStep(4)}><ArrowLeft/>Back</button><h2>Payment</h2><p className="muted-text">Complete payment to submit your order.</p>
+      {step===5 && template && <><button className="back-button" onClick={()=>{setPayConsent(false);setStep(4)}}><ArrowLeft/>Back</button><h2>Payment</h2>
+        <p className="muted-text">{razorpayKeyId ? "Complete payment to submit your order." : "Confirm you'll pay this amount, then submit your order."}</p>
         <div className="payment-summary">
           <div className="payment-row"><span>{template.name}</span><strong>₹{amount}</strong></div>
           {template.discount_percentage>0 && <div className="payment-row muted"><span><s>₹{template.price}</s> ({template.discount_percentage}% off applied)</span></div>}
         </div>
         {razorpayKeyId
           ? <button className="primary submit" disabled={busy} onClick={payNow}>{busy?"Opening payment...":`Pay ₹${amount}`} <Save size={17}/></button>
-          : <p className="payment-note">Payments aren't set up yet on this site. Please contact the site owner to complete your order.</p>}
+          : <div className="payment-actions">
+              <label className="payment-consent">
+                <input type="checkbox" checked={payConsent} onChange={e=>setPayConsent(e.target.checked)} disabled={busy}/>
+                <span>I agree to pay <strong>₹{amount}</strong> for this order.</span>
+              </label>
+              <button className="primary submit" disabled={busy || !payConsent} onClick={submitWithConsent}>{busy?"Submitting...":"Submit My Order"} <Save size={17}/></button>
+            </div>}
       </>}
     </div>
     <ContactFooter settings={data.settings}/>
